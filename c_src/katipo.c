@@ -56,6 +56,7 @@ typedef struct _GlobalInfo {
   CURLSH *shobject;
   int still_running;
   size_t to_get;
+  curl_version_info_data *ver;
 } GlobalInfo;
 
 typedef struct _ConnInfo {
@@ -665,19 +666,30 @@ static size_t write_cb(void *ptr, size_t size, size_t nmemb, void *data) {
 
 static size_t header_cb(void *ptr, size_t size, size_t nmemb, void *data) {
   size_t realsize = size * nmemb;
+  size_t adjusted_size = realsize;
   ConnInfo *conn = (ConnInfo *)data;
   char *header;
 
-  // the last two chars of headers are \r\n
+  // the last two chars of headers are \r\n except for http3...
   if (realsize > 2) {
     if (conn->resp_headers && is_status_line(ptr)) {
       curl_slist_free_all(conn->resp_headers);
       conn->resp_headers = NULL;
       conn->num_headers = 0;
     }
-    header = (char *)malloc(realsize - 1);
-    strncpy(header, ptr, realsize - 2);
-    header[realsize - 2] = '\0';
+    // TODO: understand better what's going on with http3
+    // headers. They don't seem to have the trailing \r\n that the
+    // former HTTP versions do
+    #if LIBCURL_VERSION_NUM >= 0x074200
+    long http_version;
+    curl_easy_getinfo(conn->easy, CURLINFO_HTTP_VERSION, &http_version);
+    if (http_version == CURL_HTTP_VERSION_3) {
+      adjusted_size += 1;
+    }
+    #endif
+    header = (char *)malloc(adjusted_size - 1);
+    strncpy(header, ptr, adjusted_size - 2);
+    header[adjusted_size - 2] = '\0';
     conn->resp_headers = curl_slist_append(conn->resp_headers, header);
     free(header);
     conn->num_headers++;
@@ -802,9 +814,11 @@ static void new_conn(long method, char *url, struct curl_slist *req_headers,
                      eopts.curlopt_interface);
   }
   #if LIBCURL_VERSION_NUM >= 0x072800 /* Available since 7.40.0 */
-  if (eopts.curlopt_unix_socket_path != NULL) {
-    curl_easy_setopt(conn->easy, CURLOPT_UNIX_SOCKET_PATH,
-                     eopts.curlopt_unix_socket_path);
+  if (global->ver->features & CURL_VERSION_UNIX_SOCKETS) {
+    if (eopts.curlopt_unix_socket_path != NULL) {
+      curl_easy_setopt(conn->easy, CURLOPT_UNIX_SOCKET_PATH,
+                       eopts.curlopt_unix_socket_path);
+    }
   }
   #endif
   #if LIBCURL_VERSION_NUM >= 0x073100 /* Available since 7.49.0 */
@@ -1131,6 +1145,7 @@ int main(int argc, char **argv) {
   int option_index = 0;
   int c;
   long pipelining = 0;
+  curl_version_info_data *ver;
 
   struct option long_options[] = {
     { "pipelining", required_argument, 0, 'p' },
@@ -1158,6 +1173,8 @@ int main(int argc, char **argv) {
   }
   global.timer_event = evtimer_new(global.evbase, timer_cb, &global);
   global.to_get = 0;
+  ver = curl_version_info(CURLVERSION_NOW);
+  global.ver = ver;
 
   curl_multi_setopt(global.multi, CURLMOPT_SOCKETFUNCTION, sock_cb);
   curl_multi_setopt(global.multi, CURLMOPT_SOCKETDATA, &global);

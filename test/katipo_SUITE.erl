@@ -33,16 +33,8 @@ init_per_group(pool, Config) ->
     application:ensure_all_started(meck),
     Config;
 init_per_group(https, Config) ->
-    application:ensure_all_started(cowboy),
-    Dispatch = cowboy_router:compile([{'_', [{"/", get_handler, []}]}]),
     DataDir = ?config(data_dir, Config),
-    CACert = filename:join(DataDir, "cowboy-ca.crt"),
-    {ok, _} = cowboy:start_tls(ct_https,
-                               [{port, 8443},
-                                {cacertfile, CACert},
-                                {certfile, filename:join(DataDir, "server.crt")},
-                                {keyfile, filename:join(DataDir, "server.key")}],
-                               #{env => #{dispatch => Dispatch}}),
+    CACert = filename:join(DataDir, "ca-bundle.crt"),
     [{cacert_file, list_to_binary(CACert)} | Config];
 init_per_group(proxy, Config) ->
     application:ensure_all_started(http_proxy),
@@ -159,7 +151,9 @@ groups() ->
       [metrics_true,
        metrics_false]},
      {http2, [parallel],
-      [http2_get]}].
+      [http2_get]},
+     {http3, [parallel],
+      [http3_get]}].
 
 all() ->
     [{group, http},
@@ -169,7 +163,8 @@ all() ->
      {group, session},
      {group, port},
      {group, metrics},
-     {group, http2}].
+     {group, http2},
+     {group, http3}].
 
 get(_) ->
     {ok, #{status := 200, body := Body}} =
@@ -626,7 +621,7 @@ verify_host_verify_peer_ok(_) ->
 
 verify_host_verify_peer_error(_) ->
     {error, #{code := Code}} =
-         katipo:get(?POOL, <<"https://localhost:8443">>,
+         katipo:get(?POOL, <<"https://self-signed.badssl.com/">>,
                     #{ssl_verifyhost => true, ssl_verifypeer => true}),
     %% TODO: this could be made to reflect the ifdef from katipo.c...
     ok = case Code of
@@ -634,23 +629,23 @@ verify_host_verify_peer_error(_) ->
              peer_failed_verification -> ok
          end,
     {error, #{code := Code}} =
-         katipo:get(?POOL, <<"https://localhost:8443">>,
+         katipo:get(?POOL, <<"https://self-signed.badssl.com/">>,
                     #{ssl_verifyhost => false, ssl_verifypeer => true}),
     ok = case Code of
              ssl_cacert -> ok;
              peer_failed_verification -> ok
          end,
     {ok, #{status := 200}} =
-        katipo:get(?POOL, <<"https://localhost:8443">>,
+        katipo:get(?POOL, <<"https://self-signed.badssl.com/">>,
                    #{ssl_verifyhost => true, ssl_verifypeer => false}),
     {ok, #{status := 200}} =
-        katipo:get(?POOL, <<"https://localhost:8443">>,
+        katipo:get(?POOL, <<"https://self-signed.badssl.com/">>,
                    #{ssl_verifyhost => false, ssl_verifypeer => false}).
 
 cacert_self_signed(Config) ->
     CACert = ?config(cacert_file, Config),
-    {ok, #{status := 200}} =
-        katipo:get(?POOL, <<"https://localhost:8443">>,
+    {ok, #{status := 301}} =
+        katipo:get(?POOL, <<"https://google.com">>,
                    #{ssl_verifyhost => true, ssl_verifypeer => true, cacert => CACert}).
 
 badssl(_) ->
@@ -801,6 +796,12 @@ http2_get(_) ->
                    #{http_version => curl_http_version_2_prior_knowledge, verbose => true}),
     Json = jsx:decode(Body),
     [{<<"a">>, <<"!@#$%^&*()_+">>}] = proplists:get_value(<<"args">>, Json).
+
+http3_get(_) ->
+    {ok, #{status := 404, headers := Headers}} =
+        katipo:get(?POOL, <<"https://quic.tech:8443">>,
+                   #{http_version => curl_http_version_3, verbose => true}),
+    <<"quiche">> = proplists:get_value(<<"server">>, Headers).
 
 repeat_until_true(Fun) ->
     try
