@@ -531,6 +531,7 @@ static void check_multi_info(GlobalInfo *global) {
   CURLcode res;
 
   while ((msg = curl_multi_info_read(global->multi, &msgs_left))) {
+    fprintf(stderr, "ZZZZ curl_multi_info_read\n");
     if (msg->msg == CURLMSG_DONE) {
       easy = msg->easy_handle;
       res = msg->data.result;
@@ -550,6 +551,7 @@ static void check_multi_info(GlobalInfo *global) {
         send_error_to_erlang(res, conn);
       }
 
+      fprintf(stderr, "ZZZZ curl_multi_remove_handle\n");
       curl_multi_remove_handle(global->multi, easy);
       free(conn->url);
       free(conn->pid);
@@ -657,6 +659,7 @@ static size_t write_cb(void *ptr, size_t size, size_t nmemb, void *data) {
   size_t realsize = size * nmemb;
   ConnInfo *conn = (ConnInfo *)data;
 
+  fprintf(stderr, "ZZZZ write_cb\n");
   conn->memory = (char *)realloc(conn->memory, conn->size + realsize);
   memcpy(&(conn->memory[conn->size]), ptr, realsize);
   conn->size += realsize;
@@ -670,6 +673,7 @@ static size_t header_cb(void *ptr, size_t size, size_t nmemb, void *data) {
   ConnInfo *conn = (ConnInfo *)data;
   char *header;
 
+  fprintf(stderr, "ZZZZ header_cb\n");
   // the last two chars of headers are \r\n except for http3...
   if (realsize > 2) {
     if (conn->resp_headers && is_status_line(ptr)) {
@@ -848,6 +852,7 @@ static void new_conn(long method, char *url, struct curl_slist *req_headers,
 
   set_method(method, conn);
   rc = curl_multi_add_handle(global->multi, conn->easy);
+  fprintf(stderr, "ZZZZ curl_multi_add_handle\n");
   mcode_or_die("new_conn: curl_multi_add_handle", rc);
 }
 
@@ -1112,6 +1117,7 @@ static void erl_input(struct bufferevent *ev, void *arg) {
       errx(2, "Couldn't skip empty eopt list");
     }
 
+    fprintf(stderr, "ZZZZ new_conn\n");
     new_conn(method, url, req_headers, req_cookies, post_data,
              post_data_size, eopts, pid, ref, arg);
 
