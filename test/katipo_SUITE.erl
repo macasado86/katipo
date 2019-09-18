@@ -580,8 +580,13 @@ proxy_couldnt_connect(_) ->
 
 timeout_ms(Config) ->
     HTTPVersion = ?config(http_version, Config),
-    {error, #{code := operation_timedout}} =
-        katipo:get(?POOL, httpbin_url(Config, <<"/delay/1">>), #{timeout_ms => 500, http_version => HTTPVersion}).
+    ok = case katipo:get(?POOL, httpbin_url(Config, <<"/delay/1">>), #{timeout_ms => 500, http_version => HTTPVersion}) of
+             {error, #{code := operation_timedout}} ->
+                 ok;
+             %% http2 seems to return this when it times out
+             {error, #{code := couldnt_connect}} ->
+                 ok
+         end.
 
 couldnt_resolve_host(_) ->
     {error, #{code := couldnt_resolve_host,
