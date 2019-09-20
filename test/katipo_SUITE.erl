@@ -174,8 +174,7 @@ all() ->
      {group, session},
      {group, port},
      {group, metrics},
-     {group, http2},
-     {group, http3}].
+     {group, http2}].
 
 get(Config) ->
     HTTPVersion = ?config(http_version, Config),
