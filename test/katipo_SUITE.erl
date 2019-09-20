@@ -21,13 +21,14 @@ init_per_suite(Config) ->
 end_per_suite(_Config) ->
     ok = application:stop(katipo).
 
-init_per_group(http, Config) ->
+init_per_group(curl, Config) ->
     application:ensure_all_started(cowboy),
     Filename = tempfile:name("katipo_test_"),
+    Name = make_ref(),
     Dispatch = cowboy_router:compile([{'_', [{"/unix", get_handler, []}]}]),
-    {ok, _} = cowboy:start_clear(unix_socket, [{ip, {local, Filename}},
-                                               {port, 0}], #{env => #{dispatch => Dispatch}}),
-    [{unix_socket_file, Filename} | Config];
+    {ok, _} = cowboy:start_clear(Name, [{ip, {local, Filename}},
+                                        {port, 0}], #{env => #{dispatch => Dispatch}}),
+    [{unix_socket_file, Filename}, {unix_server_name, Name}] ++ Config;
 init_per_group(session, Config) ->
     application:ensure_all_started(katipo),
     Config;
@@ -46,9 +47,11 @@ init_per_group(http3, Config) ->
 init_per_group(_, Config) ->
     Config.
 
-end_per_group(http, Config) ->
+end_per_group(curl, Config) ->
     Filename = ?config(unix_socket_file, Config),
+    Name = ?config(unix_server_name, Config),
     _ = file:delete(Filename),
+    ok = cowboy:stop_listener(Name),
     Config;
 end_per_group(pool, Config) ->
     application:stop(meck),
