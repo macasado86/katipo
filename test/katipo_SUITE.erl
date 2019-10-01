@@ -177,7 +177,8 @@ all() ->
      {group, session},
      {group, port},
      {group, metrics},
-     {group, http2}].
+     {group, http2},
+     {group, http3}].
 
 get(Config) ->
     HTTPVersion = ?config(http_version, Config),
@@ -338,7 +339,6 @@ headers(Config) ->
         katipo:get(?POOL, Url, #{headers => Headers, http_version => HTTPVersion}),
     Json = jsx:decode(Body),
     Expected =  [{<<"Accept">>,<<"*/*">>},
-                 {<<"Accept-Encoding">>,<<"gzip,deflate">>},
                  {<<"Header1">>,<<"!@#$%^&*()">>},
                  {<<"Host">>,Host}],
     [] = Expected -- proplists:get_value(<<"headers">>, Json).
